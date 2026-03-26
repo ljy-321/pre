@@ -1,0 +1,81 @@
+# 📘 多模态 / LLM 岗面试问答大全
+
+> 适用于：多模态大模型 / LLM工程师 / GraphRAG / AI算法岗  
+> 内容涵盖：LLM基础、RAG/GraphRAG、多模态、工程部署、项目实战
+
+---
+
+## 🧠 一、LLM基础
+
+### ❓1 LLM 的基本原理是什么？
+
+**回答：**
+- 基于 Transformer 的自回归语言模型
+- 通过预测下一个 token 学习语言分布
+- 利用 self-attention 捕捉上下文依赖
+
+**扩展：**
+- Scaling Law
+- 预训练 + SFT + RLHF
+
+---
+
+### ❓2 Transformer 为什么有效？
+
+**回答：**
+- self-attention 可建模任意位置依赖
+- 并行计算能力强
+- 表达能力优于 RNN
+
+---
+
+### ❓3 什么是 hallucination？如何解决？
+
+**回答：**
+- 模型生成不真实但合理的内容
+
+**解决方法：**
+- RAG（引入外部知识）
+- GraphRAG（结构约束）
+- Prompt约束
+- 后处理校验
+
+---
+
+## 🧠 二、RAG / GraphRAG
+
+### ❓4 什么是 RAG？
+
+**回答：**
+- 检索增强生成（Retrieval-Augmented Generation）
+- 检索知识 + LLM生成
+
+---
+
+### ❓5 GraphRAG 和 RAG 区别？
+
+| 传统RAG | GraphRAG |
+|--------|----------|
+| 文本检索 | 图结构检索 |
+| 无逻辑 | 因果关系 |
+| 不可解释 | 可解释 |
+
+**总结：**
+GraphRAG 适用于因果推理场景（如工业）
+
+---
+
+### ❓6 GraphRAG 实现流程
+
+```text
+用户问题
+  ↓
+实体识别
+  ↓
+图谱检索
+  ↓
+路径搜索（多跳）
+  ↓
+构造Prompt
+  ↓
+LLM推理
