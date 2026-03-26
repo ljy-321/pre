@@ -1,0 +1,163 @@
+"""
+PDF解析与表格保护模块
+处理多栏排版、表格密集的企业文档
+"""
+
+import PyPDF2
+from pdfplumber import PDF
+import re
+from typing import List, Dict, Tuple
+
+class PDFParser:
+    """
+    PDF解析器，支持多栏排版和表格识别
+    
+    核心特性：
+    1. 多栏布局检测：根据bbox x坐标判断栏数
+    2. 表格保护：表格作为原子单位，不切分
+    3. 页眉页脚过滤：正则匹配"第X页"、"Page X"
+    """
+    
+    def __init__(self, pdf_path: str):
+        self.pdf_path = pdf_path
+        self.document = None
+        
+    def extract_text_with_layout(self) -> List[Dict]:
+        """
+        提取文本，保留布局信息（bbox坐标）
+        返回：[{"text": "...", "bbox": (x0, y0, x1, y1), "page": 1}]
+        """
+        with PDF.open(self.pdf_path) as pdf:
+            blocks = []
+            for page_idx, page in enumerate(pdf.pages):
+                # 提取文本块及其位置
+                for obj in page.chars:
+                    blocks.append({
+                        "text": obj["text"],
+                        "bbox": (obj["x0"], obj["top"], obj["x1"], obj["bottom"]),
+                        "page": page_idx + 1,
+                        "x0": obj["x0"]  # 用于后续排序
+                    })
+            return blocks
+    
+    def detect_columns(self, blocks: List[Dict]) -> int:
+        """
+        检测页面栏数
+        根据x坐标分布判断：单栏/双栏/多栏
+        """
+        x_coords = [b["x0"] for b in blocks]
+        if not x_coords:
+            return 1
+        
+        # ���化：统计x坐标的聚类数
+        x_coords_sorted = sorted(x_coords)
+        gaps = [x_coords_sorted[i+1] - x_coords_sorted[i] 
+                for i in range(len(x_coords_sorted)-1)]
+        
+        # 如果存在大间隔（>200px），判定为多栏
+        large_gaps = sum(1 for g in gaps if g > 200)
+        return min(large_gaps + 1, 3)  # 最多3栏
+    
+    def extract_tables(self) -> List[Dict]:
+        """
+        提取表格，转换为Markdown格式
+        返回：[{"markdown_table": "...", "page": 1}]
+        """
+        with PDF.open(self.pdf_path) as pdf:
+            tables = []
+            for page_idx, page in enumerate(pdf.pages):
+                for table in page.extract_tables():
+                    # 转换为Markdown
+                    md_table = self._table_to_markdown(table)
+                    tables.append({
+                        "content": md_table,
+                        "page": page_idx + 1,
+                        "type": "table"
+                    })
+            return tables
+    
+    @staticmethod
+    def _table_to_markdown(table: List[List[str]]) -> str:
+        """将表格列表转换为Markdown格式"""
+        if not table:
+            return ""
+        
+        markdown = []
+        for i, row in enumerate(table):
+            markdown.append("| " + " | ".join(str(cell) for cell in row) + " |")
+            if i == 0:  # 表头后添加分割线
+                markdown.insert(1, "|" + "|".join(["---"] * len(row)) + "|")
+        
+        return "\n".join(markdown)
+    
+    def filter_headers_footers(self, text: str) -> str:
+        """过滤页眉页脚"""
+        # 过滤"第X页"、"Page X"等
+        patterns = [
+            r"第\d+页",
+            r"Page \d+",
+            r"^\s*\d+\s*$",  # 单个数字（通常是页码）
+        ]
+        
+        for pattern in patterns:
+            text = re.sub(pattern, "", text)
+        
+        return text.strip()
+    
+    def parse(self) -> List[Dict]:
+        """
+        完整解析流程：提取 → 去重 → 去页眉页脚
+        返回标准格式：
+        [{
+            "content": "...",
+            "page": 1,
+            "type": "text" or "table",
+            "bbox": (x0, y0, x1, y1)  # 仅text有
+        }]
+        """
+        text_blocks = self.extract_text_with_layout()
+        table_blocks = self.extract_tables()
+        
+        # 处理文本块
+        processed_text = []
+        for block in text_blocks:
+            content = self.filter_headers_footers(block["text"])
+            if content:  # 非空
+                processed_text.append({
+                    "content": content,
+                    "page": block["page"],
+                    "type": "text",
+                    "bbox": block["bbox"]
+                })
+        
+        # 合并：先表格，后文本（便于后续处理）
+        all_blocks = table_blocks + processed_text
+        
+        return all_blocks
+
+
+class DocumentProcessor:
+    """
+    文档预处理器
+    """
+    
+    @staticmethod
+    def clean_text(text: str) -> str:
+        """清理文本：去重空行、标准化空格"""
+        # 去重空行
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        # 标准化空格
+        text = " ".join(lines)
+        return text
+
+
+if __name__ == "__main__":
+    # 示例：解析单个PDF
+    pdf_path = "sample.pdf"
+    parser = PDFParser(pdf_path)
+    blocks = parser.parse()
+    
+    for block in blocks[:5]:  # 打印前5块
+        print(f"Type: {block['type']}, Page: {block['page']}")
+        print(f"Content: {block['content'][:100]}...")
+        print("-" * 80)
